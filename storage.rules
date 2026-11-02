@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function employeePath() {
+      return /databases/(default)/documents/employees/$(request.auth.uid);
+    }
+
+    function activeStaff() {
+      return request.auth != null
+        && firestore.exists(employeePath())
+        && firestore.get(employeePath()).data.active == true;
+    }
+
+    match /properties/{propertyId}/{fileName} {
+      allow read: if true;
+      allow write: if activeStaff()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

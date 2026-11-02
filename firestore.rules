@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function employeePath() {
+      return /databases/$(database)/documents/employees/$(request.auth.uid);
+    }
+
+    function activeStaff() {
+      return signedIn()
+        && exists(employeePath())
+        && get(employeePath()).data.active == true;
+    }
+
+    function superAdmin() {
+      return activeStaff()
+        && get(employeePath()).data.role == 'super_admin';
+    }
+
+    match /employees/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if superAdmin();
+      allow create, update: if superAdmin()
+        && request.resource.data.keys().hasOnly(['displayName', 'phone', 'role', 'active'])
+        && request.resource.data.role in ['employee', 'super_admin'];
+      allow delete: if superAdmin() && request.auth.uid != uid;
+    }
+
+    match /properties/{propertyId} {
+      allow read: if resource.data.published == true || activeStaff();
+      allow create: if activeStaff()
+        && request.resource.data.created_by_staff_id == request.auth.uid;
+      allow update: if activeStaff()
+        && request.resource.data.created_by_staff_id == resource.data.created_by_staff_id;
+      allow delete: if activeStaff()
+        && (superAdmin() || resource.data.created_by_staff_id == request.auth.uid);
+    }
+
+    match /property_owners/{propertyId} {
+      allow read: if activeStaff();
+      allow create: if activeStaff()
+        && (superAdmin() || request.resource.data.created_by_staff_id == request.auth.uid);
+      allow update: if activeStaff()
+        && (superAdmin() || resource.data.created_by_staff_id == request.auth.uid)
+        && request.resource.data.created_by_staff_id == resource.data.created_by_staff_id;
+      allow delete: if activeStaff()
+        && (superAdmin() || resource.data.created_by_staff_id == request.auth.uid);
+    }
+  }
+}
